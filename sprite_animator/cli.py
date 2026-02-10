@@ -23,62 +23,91 @@ NANO_BANANA_SCRIPT = Path(
 # Animation presets: (labels, prompt_suffix)
 ANIMATION_PRESETS = {
     "idle": {
-        "labels": ["Normal", "Breathe in", "Blink", "Breathe out"],
+        "cols": 4, "rows": 4,
+        "labels": [
+            "1:stand", "2:breathe↑", "3:breathe↑↑", "4:breathe↑",
+            "5:stand", "6:blink¼", "7:blink½", "8:blink¾",
+            "9:eyes shut", "10:blink¾", "11:blink½", "12:blink¼",
+            "13:stand", "14:breathe↓", "15:breathe↓↓", "16:breathe↓",
+        ],
         "prompt": (
-            "Fill each cell of this 4-panel sprite sheet grid with a cute pixel art version "
-            "of the character from the reference image. 32x32 pixel art style, retro game aesthetic, "
-            "clean chunky pixels. Each cell should show a DIFFERENT frame of a subtle idle animation: "
-            "Panel 1 (Normal): standing still. "
-            "Panel 2 (Breathe in): body raised slightly. "
-            "Panel 3 (Blink): eyes half-closed/blinking. "
-            "Panel 4 (Breathe out): body lowered slightly. "
-            "Keep the character's colors, features, and proportions IDENTICAL across all 4 panels. "
-            "Only the specified body part should change between frames. "
-            "Solid flat color background (same in all panels). Keep the grid lines visible."
+            "Fill this 4x4 sprite sheet grid (16 cells, read left-to-right, top-to-bottom) "
+            "with a cute pixel art version of the character from the reference image. "
+            "32x32 pixel art style, retro game aesthetic, clean chunky pixels. "
+            "This is an IDLE animation loop with smooth transitions. Each cell is one frame: "
+            "Row 1: standing → gentle breathe up (body rises 1px each frame) → back to center. "
+            "Row 2: standing → slow eye blink (eyes gradually close over 4 frames). "
+            "Row 3: eyes fully shut → slow eye open (eyes gradually open over 4 frames). "
+            "Row 4: standing → gentle breathe down (body lowers 1px each frame) → back to center. "
+            "CRITICAL: Keep the character IDENTICAL across all 16 frames — same colors, proportions, "
+            "size, position. Only the specified micro-movement should change. "
+            "Solid flat color background (same in all cells)."
         ),
     },
     "wave": {
-        "labels": ["Stand", "Arm up", "Wave right", "Arm down"],
+        "cols": 4, "rows": 4,
+        "labels": [
+            "1:stand", "2:arm↑¼", "3:arm↑½", "4:arm↑¾",
+            "5:arm up", "6:wave R", "7:wave L", "8:wave R",
+            "9:wave L", "10:wave R", "11:arm↓¾", "12:arm↓½",
+            "13:arm↓¼", "14:stand", "15:smile", "16:stand",
+        ],
         "prompt": (
-            "Fill each cell of this 4-panel sprite sheet grid with a cute pixel art version "
-            "of the character from the reference image. 32x32 pixel art style, retro game aesthetic, "
-            "clean chunky pixels. Each cell should show a DIFFERENT frame of a waving animation: "
-            "Panel 1 (Stand): standing with arms at sides. "
-            "Panel 2 (Arm up): one arm/paw raised up to wave. "
-            "Panel 3 (Wave right): arm waving to the right. "
-            "Panel 4 (Arm down): arm coming back down. "
-            "Keep the character's colors, features, and proportions IDENTICAL across all 4 panels. "
-            "Only the arm position should change between frames. "
-            "Solid flat color background (same in all panels). Keep the grid lines visible."
+            "Fill this 4x4 sprite sheet grid (16 cells, read left-to-right, top-to-bottom) "
+            "with a cute pixel art version of the character from the reference image. "
+            "32x32 pixel art style, retro game aesthetic, clean chunky pixels. "
+            "This is a WAVE animation loop with smooth transitions. Each cell is one frame: "
+            "Row 1: standing still → arm gradually raising up (4 incremental positions). "
+            "Row 2: arm fully up → waving side to side (arm tilts right, left, right). "
+            "Row 3: still waving (left, right) → arm gradually lowering (2 frames). "
+            "Row 4: arm coming down → back to standing → happy smile → standing. "
+            "CRITICAL: Keep the character IDENTICAL across all 16 frames — same colors, proportions, "
+            "size, position. Only the arm position and expression should change. "
+            "Solid flat color background (same in all cells)."
         ),
     },
     "bounce": {
-        "labels": ["Stand", "Crouch", "Jump", "Fall"],
+        "cols": 4, "rows": 4,
+        "labels": [
+            "1:stand", "2:crouch¼", "3:crouch½", "4:crouch full",
+            "5:launch", "6:rise", "7:peak", "8:peak+happy",
+            "9:fall start", "10:falling", "11:land", "12:squish",
+            "13:recover¼", "14:recover½", "15:recover¾", "16:stand",
+        ],
         "prompt": (
-            "Fill each cell of this 4-panel sprite sheet grid with a cute pixel art version "
-            "of the character from the reference image. 32x32 pixel art style, retro game aesthetic, "
-            "clean chunky pixels. Each cell should show a DIFFERENT frame of a bouncing animation: "
-            "Panel 1 (Stand): standing normally. "
-            "Panel 2 (Crouch): squished down, preparing to jump. "
-            "Panel 3 (Jump): at peak of jump, stretched tall, feet off ground. "
-            "Panel 4 (Fall): coming back down. "
-            "Keep the character's colors, features, and proportions IDENTICAL across all 4 panels. "
-            "Only the vertical position and squish should change between frames. "
-            "Solid flat color background (same in all panels). Keep the grid lines visible."
+            "Fill this 4x4 sprite sheet grid (16 cells, read left-to-right, top-to-bottom) "
+            "with a cute pixel art version of the character from the reference image. "
+            "32x32 pixel art style, retro game aesthetic, clean chunky pixels. "
+            "This is a BOUNCE animation loop with smooth transitions. Each cell is one frame: "
+            "Row 1: standing → gradually crouching down (getting squished/compressed). "
+            "Row 2: launching upward → rising → at peak of jump (stretched tall) → happy face at peak. "
+            "Row 3: starting to fall → falling fast → landing impact → squished on landing. "
+            "Row 4: gradually recovering from squish back to standing position. "
+            "CRITICAL: Keep the character IDENTICAL across all 16 frames — same colors, proportions. "
+            "Only the vertical position and squish/stretch should change. "
+            "Solid flat color background (same in all cells)."
         ),
     },
     "dance": {
-        "labels": ["Pose 1", "Pose 2", "Pose 3", "Pose 4"],
+        "cols": 4, "rows": 4,
+        "labels": [
+            "1:center", "2:lean L", "3:arms L", "4:lean L+",
+            "5:center", "6:lean R", "7:arms R", "8:lean R+",
+            "9:center", "10:arms up", "11:spin¼", "12:spin½",
+            "13:spin¾", "14:arms up", "15:jump", "16:land",
+        ],
         "prompt": (
-            "Fill each cell of this 4-panel sprite sheet grid with a cute pixel art version "
-            "of the character from the reference image. 32x32 pixel art style, retro game aesthetic, "
-            "clean chunky pixels. Each cell should show a DIFFERENT frame of a fun dance animation: "
-            "Panel 1: leaning left with arms out. "
-            "Panel 2: centered with arms up. "
-            "Panel 3: leaning right with arms out. "
-            "Panel 4: centered with one arm on hip. "
-            "Keep the character's colors, features, and proportions IDENTICAL across all 4 panels. "
-            "Solid flat color background (same in all panels). Keep the grid lines visible."
+            "Fill this 4x4 sprite sheet grid (16 cells, read left-to-right, top-to-bottom) "
+            "with a cute pixel art version of the character from the reference image. "
+            "32x32 pixel art style, retro game aesthetic, clean chunky pixels. "
+            "This is a fun DANCE animation loop with smooth transitions. Each cell is one frame: "
+            "Row 1: center pose → leaning left → arms out left → full left lean. "
+            "Row 2: back to center → leaning right → arms out right → full right lean. "
+            "Row 3: center → arms up high → spinning (4 rotation frames). "
+            "Row 4: finish spin → arms up → jump → land back in center. "
+            "CRITICAL: Keep the character IDENTICAL across all 16 frames — same colors, proportions. "
+            "Only the pose/position should change. Make it look fun and energetic! "
+            "Solid flat color background (same in all cells)."
         ),
     },
 }
@@ -180,7 +209,7 @@ Examples:
     parser.add_argument("-i", "--input", required=True, type=Path, help="Input image")
     parser.add_argument("-o", "--output", required=True, type=Path, help="Output GIF path")
     parser.add_argument("-a", "--animation", choices=list(ANIMATION_PRESETS.keys()), default="idle", help="Animation type (default: idle)")
-    parser.add_argument("-d", "--duration", type=int, default=200, help="Frame duration in ms (default: 200)")
+    parser.add_argument("-d", "--duration", type=int, default=100, help="Frame duration in ms (default: 100)")
     parser.add_argument("-s", "--size", type=int, default=128, help="Output sprite size in px (default: 128)")
     parser.add_argument("-r", "--resolution", choices=["1K", "2K"], default="1K", help="Generation resolution")
     parser.add_argument("--keep-sheet", action="store_true", help="Keep the raw sprite sheet")
@@ -198,11 +227,13 @@ Examples:
         sys.exit(1)
 
     preset = ANIMATION_PRESETS[args.animation]
-    cols = len(preset["labels"])
+    cols = preset["cols"]
+    rows = preset["rows"]
+    total_frames = cols * rows
 
     print(f"🎮 sprite-animator", flush=True)
     print(f"   input: {args.input}", flush=True)
-    print(f"   animation: {args.animation} ({cols} frames)", flush=True)
+    print(f"   animation: {args.animation} ({total_frames} frames, {cols}x{rows} grid)", flush=True)
     print(f"   output: {args.output}", flush=True)
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -210,7 +241,7 @@ Examples:
 
         # Step 1: Create template
         print(f"\n📐 creating sprite sheet template...", flush=True)
-        template_img = create_template(cols=cols, rows=1, labels=preset["labels"])
+        template_img = create_template(cols=cols, rows=rows, labels=preset["labels"])
         template_path = tmpdir / "template.png"
         template_img.save(template_path)
         if args.verbose:
@@ -241,16 +272,7 @@ Examples:
         if args.verbose:
             print(f"   sheet size: {sheet.size}", flush=True)
 
-        # Auto-detect grid layout — model might return 2x2 instead of 4x1
-        w, h = sheet.size
-        if w == h and cols == 4:
-            # Square image = likely 2x2 grid
-            grid_cols, grid_rows = 2, 2
-            if args.verbose:
-                print(f"   detected 2x2 grid layout", flush=True)
-        else:
-            grid_cols, grid_rows = cols, 1
-        frames = extract_frames(sheet, cols=grid_cols, rows=grid_rows)
+        frames = extract_frames(sheet, cols=cols, rows=rows)
         print(f"   ✓ extracted {len(frames)} frames", flush=True)
 
         # Step 4: Assemble GIF
