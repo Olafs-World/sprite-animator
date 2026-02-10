@@ -1,6 +1,6 @@
 [project]
 name = "sprite-animator"
-version = "0.1.0"
+version = "0.2.0"
 description = "Generate animated pixel art sprites from any image using AI"
 readme = "README.md"
 license = "MIT"
@@ -21,6 +21,7 @@ classifiers = [
 ]
 keywords = ["sprite", "pixel-art", "animation", "gif", "ai", "game-dev"]
 dependencies = [
+    "google-genai>=1.0.0",
     "pillow>=10.0.0",
 ]
 

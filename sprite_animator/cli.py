@@ -3,22 +3,19 @@
 Sprite Animator CLI - Generate animated pixel art sprites from any image.
 
 Uses a template-based sprite sheet approach: sends a grid template + source image
-to nano-banana-pro in a SINGLE request, then splits the result into frames for a GIF.
+to Gemini in a SINGLE request, then splits the result into frames for a GIF.
 This ensures visual consistency across all animation frames.
 """
 
 import argparse
-import subprocess
+import base64
+import os
 import sys
 import tempfile
+from io import BytesIO
 from pathlib import Path
 
 from sprite_animator.template import create_template, extract_frames
-
-# nano-banana-pro script path
-NANO_BANANA_SCRIPT = Path(
-    "/home/ec2-user/.npm-global/lib/node_modules/openclaw/skills/nano-banana-pro/scripts/generate_image.py"
-)
 
 # Animation presets: (labels, prompt_suffix)
 ANIMATION_PRESETS = {
@@ -112,47 +109,92 @@ ANIMATION_PRESETS = {
     },
 }
 
+PIXELATE_PROMPT = (
+    "Convert this person into a cute 32x32 pixel art character sprite. "
+    "Retro game aesthetic, clean chunky pixels. Keep their exact appearance: "
+    "skin tone, hair style, facial hair, clothing colors and style. "
+    "Full body, standing pose, centered on a solid flat color background."
+)
+
+
+def get_api_key(provided_key: str | None = None) -> str:
+    """Get Gemini API key from argument, GOOGLE_API_KEY, or GEMINI_API_KEY."""
+    if provided_key:
+        return provided_key
+    key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+    if not key:
+        print(
+            "Error: No API key found. Set GEMINI_API_KEY or GOOGLE_API_KEY env var, "
+            "or pass --api-key.",
+            file=sys.stderr,
+            flush=True,
+        )
+        sys.exit(1)
+    return key
+
+
+def call_gemini(
+    api_key: str,
+    images: list,
+    prompt: str,
+    resolution: str = "1K",
+) -> "PILImage":
+    """Call Gemini image generation and return a PIL Image."""
+    from google import genai
+    from google.genai import types
+    from PIL import Image as PILImage
+
+    client = genai.Client(api_key=api_key)
+
+    contents = [*images, prompt]
+
+    response = client.models.generate_content(
+        model="gemini-3-pro-image-preview",
+        contents=contents,
+        config=types.GenerateContentConfig(
+            response_modalities=["TEXT", "IMAGE"],
+            image_config=types.ImageConfig(image_size=resolution),
+        ),
+    )
+
+    for part in response.parts:
+        if part.text is not None:
+            print(f"   model: {part.text}", flush=True)
+        elif part.inline_data is not None:
+            image_data = part.inline_data.data
+            if isinstance(image_data, str):
+                image_data = base64.b64decode(image_data)
+            return PILImage.open(BytesIO(image_data))
+
+    raise RuntimeError("Gemini returned no image data")
+
 
 def generate_sprite_sheet(
-    input_image: Path,
+    api_key: str,
+    input_image: "PILImage",
     template_path: Path,
     output_path: Path,
     prompt: str,
     resolution: str = "1K",
 ) -> bool:
-    """Generate a sprite sheet using nano-banana-pro with template + reference image."""
-    cmd = [
-        "uv", "run", str(NANO_BANANA_SCRIPT),
-        "--prompt", prompt,
-        "--filename", str(output_path),
-        "-i", str(template_path),
-        "-i", str(input_image),
-        "--resolution", resolution,
-    ]
+    """Generate a sprite sheet using Gemini with template + reference image."""
+    from PIL import Image as PILImage
 
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=180,
-        )
+        template_img = PILImage.open(template_path)
+        result = call_gemini(api_key, [template_img, input_image], prompt, resolution)
 
-        if result.returncode != 0:
-            print(f"  Error: {result.stderr.strip()}", file=sys.stderr, flush=True)
-            return False
-
-        if not output_path.exists():
-            print(f"  Sheet not created: {output_path}", file=sys.stderr, flush=True)
-            return False
+        # Save as PNG
+        if result.mode == "RGBA":
+            rgb = PILImage.new("RGB", result.size, (255, 255, 255))
+            rgb.paste(result, mask=result.split()[3])
+            rgb.save(str(output_path), "PNG")
+        else:
+            result.convert("RGB").save(str(output_path), "PNG")
 
         return True
-
-    except subprocess.TimeoutExpired:
-        print("  Timeout generating sprite sheet", file=sys.stderr, flush=True)
-        return False
     except Exception as e:
-        print(f"  Exception: {e}", file=sys.stderr, flush=True)
+        print(f"  Error: {e}", file=sys.stderr, flush=True)
         return False
 
 
@@ -203,6 +245,7 @@ Examples:
   sprite-animator -i photo.png -o sprite.gif
   sprite-animator -i avatar.png -o wave.gif -a wave
   sprite-animator -i pet.jpg -o bounce.gif -a bounce -s 256
+  sprite-animator -i photo.png -o dance.gif -a dance --two-step
         """,
     )
 
@@ -212,8 +255,10 @@ Examples:
     parser.add_argument("-d", "--duration", type=int, default=100, help="Frame duration in ms (default: 100)")
     parser.add_argument("-s", "--size", type=int, default=128, help="Output sprite size in px (default: 128)")
     parser.add_argument("-r", "--resolution", choices=["1K", "2K"], default="1K", help="Generation resolution")
+    parser.add_argument("--two-step", action="store_true", help="First pixelate the input, then animate (better likeness for photos)")
     parser.add_argument("--keep-sheet", action="store_true", help="Keep the raw sprite sheet")
     parser.add_argument("--keep-frames", action="store_true", help="Keep individual frame files")
+    parser.add_argument("--api-key", help="Gemini API key (overrides env vars)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
 
     args = parser.parse_args()
@@ -222,9 +267,9 @@ Examples:
         print(f"Error: Input not found: {args.input}", file=sys.stderr, flush=True)
         sys.exit(1)
 
-    if not NANO_BANANA_SCRIPT.exists():
-        print(f"Error: nano-banana-pro not found: {NANO_BANANA_SCRIPT}", file=sys.stderr, flush=True)
-        sys.exit(1)
+    api_key = get_api_key(args.api_key)
+
+    from PIL import Image as PILImage
 
     preset = ANIMATION_PRESETS[args.animation]
     cols = preset["cols"]
@@ -234,25 +279,52 @@ Examples:
     print(f"🎮 sprite-animator", flush=True)
     print(f"   input: {args.input}", flush=True)
     print(f"   animation: {args.animation} ({total_frames} frames, {cols}x{rows} grid)", flush=True)
+    if args.two_step:
+        print(f"   mode: two-step (pixelate → animate)", flush=True)
     print(f"   output: {args.output}", flush=True)
+
+    # Load input image
+    input_img = PILImage.open(args.input)
+
+    # Optional two-step: pixelate first for better likeness
+    if args.two_step:
+        print(f"\n🎨 step 1: pixelating input image...", flush=True)
+        try:
+            pixel_img = call_gemini(api_key, [input_img], PIXELATE_PROMPT, "1K")
+            input_img = pixel_img
+            print(f"   ✓ pixelated version created", flush=True)
+
+            # Optionally save the pixelated version
+            pixel_out = args.output.parent / f"{args.output.stem}_pixel.png"
+            if pixel_img.mode == "RGBA":
+                rgb = PILImage.new("RGB", pixel_img.size, (255, 255, 255))
+                rgb.paste(pixel_img, mask=pixel_img.split()[3])
+                rgb.save(str(pixel_out), "PNG")
+            else:
+                pixel_img.convert("RGB").save(str(pixel_out), "PNG")
+            print(f"   saved: {pixel_out}", flush=True)
+        except Exception as e:
+            print(f"   ⚠️  pixelation failed ({e}), falling back to original image", flush=True)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
 
-        # Step 1: Create template
-        print(f"\n📐 creating sprite sheet template...", flush=True)
+        # Create template
+        step = "2" if args.two_step else "1"
+        print(f"\n📐 step {step}: creating sprite sheet template...", flush=True)
         template_img = create_template(cols=cols, rows=rows, labels=preset["labels"])
         template_path = tmpdir / "template.png"
         template_img.save(template_path)
         if args.verbose:
             print(f"   template: {template_img.size}", flush=True)
 
-        # Step 2: Generate sprite sheet (single request!)
-        print(f"🎨 generating sprite sheet (single request)...", flush=True)
+        # Generate sprite sheet
+        print(f"🎨 generating sprite sheet...", flush=True)
         sheet_path = tmpdir / "sprite_sheet.png"
 
         success = generate_sprite_sheet(
-            args.input,
+            api_key,
+            input_img,
             template_path,
             sheet_path,
             preset["prompt"],
@@ -265,17 +337,16 @@ Examples:
 
         print(f"   ✓ sprite sheet generated", flush=True)
 
-        # Step 3: Extract frames
-        print(f"✂️  extracting {cols} frames...", flush=True)
-        from PIL import Image
-        sheet = Image.open(sheet_path)
+        # Extract frames
+        print(f"✂️  extracting {total_frames} frames...", flush=True)
+        sheet = PILImage.open(sheet_path)
         if args.verbose:
             print(f"   sheet size: {sheet.size}", flush=True)
 
         frames = extract_frames(sheet, cols=cols, rows=rows)
         print(f"   ✓ extracted {len(frames)} frames", flush=True)
 
-        # Step 4: Assemble GIF
+        # Assemble GIF
         print(f"🔄 assembling animated GIF...", flush=True)
         success = create_gif(frames, args.output, frame_duration=args.duration, size=args.size)
 
