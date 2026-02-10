@@ -10,3 +10,4 @@ build/
 *_sheet.png
 *.gif
 !banner.png
+!examples/
