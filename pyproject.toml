@@ -1,0 +1,16 @@
+[project]
+name = "sprite-animator"
+version = "0.1.0"
+description = "Generate animated pixel art sprites from any image using AI"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pillow>=10.0.0",
+]
+
+[project.scripts]
+sprite-animator = "sprite_animator.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
