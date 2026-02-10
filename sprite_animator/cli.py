@@ -2,8 +2,9 @@
 """
 Sprite Animator CLI - Generate animated pixel art sprites from any image.
 
-Uses nano-banana-pro (Gemini image gen) to create pixel art frames,
-then assembles them into an animated GIF.
+Uses a template-based sprite sheet approach: sends a grid template + source image
+to nano-banana-pro in a SINGLE request, then splits the result into frames for a GIF.
+This ensures visual consistency across all animation frames.
 """
 
 import argparse
@@ -11,138 +12,156 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Optional
+
+from sprite_animator.template import create_template, extract_frames
 
 # nano-banana-pro script path
 NANO_BANANA_SCRIPT = Path(
     "/home/ec2-user/.npm-global/lib/node_modules/openclaw/skills/nano-banana-pro/scripts/generate_image.py"
 )
 
-# Animation frame prompts for idle animation (subtle movements)
-IDLE_FRAME_PROMPTS = [
-    "Transform this character into a cute pixel art sprite, 32x32 style, facing forward, standing still with arms at sides. Retro game aesthetic, clean pixels, transparent or solid color background. Keep the character's key features and colors.",
-    "Transform this character into a cute pixel art sprite, 32x32 style, facing forward, slight breathing motion with body raised 1 pixel. Retro game aesthetic, clean pixels, transparent or solid color background. Keep the character's key features and colors.",
-    "Transform this character into a cute pixel art sprite, 32x32 style, facing forward, eyes blinking (half closed). Retro game aesthetic, clean pixels, transparent or solid color background. Keep the character's key features and colors.",
-    "Transform this character into a cute pixel art sprite, 32x32 style, facing forward, slight breathing motion with body lowered 1 pixel. Retro game aesthetic, clean pixels, transparent or solid color background. Keep the character's key features and colors.",
-]
-
-# Wave animation prompts
-WAVE_FRAME_PROMPTS = [
-    "Transform this character into a cute pixel art sprite, 32x32 style, facing forward, one arm raised to wave (position 1 - arm starting to go up). Retro game aesthetic, clean pixels, solid color background. Keep the character's key features and colors.",
-    "Transform this character into a cute pixel art sprite, 32x32 style, facing forward, one arm raised high waving (position 2 - arm fully up). Retro game aesthetic, clean pixels, solid color background. Keep the character's key features and colors.",
-    "Transform this character into a cute pixel art sprite, 32x32 style, facing forward, one arm waving to the side (position 3 - arm tilted). Retro game aesthetic, clean pixels, solid color background. Keep the character's key features and colors.",
-    "Transform this character into a cute pixel art sprite, 32x32 style, facing forward, one arm coming back down (position 4 - arm lowering). Retro game aesthetic, clean pixels, solid color background. Keep the character's key features and colors.",
-]
-
-# Bounce animation prompts
-BOUNCE_FRAME_PROMPTS = [
-    "Transform this character into a cute pixel art sprite, 32x32 style, character at normal height, happy expression. Retro game aesthetic, clean pixels, solid color background. Keep the character's key features and colors.",
-    "Transform this character into a cute pixel art sprite, 32x32 style, character squishing down (compressed, wider). Retro game aesthetic, clean pixels, solid color background. Keep the character's key features and colors.",
-    "Transform this character into a cute pixel art sprite, 32x32 style, character jumping up high, stretched vertically. Retro game aesthetic, clean pixels, solid color background. Keep the character's key features and colors.",
-    "Transform this character into a cute pixel art sprite, 32x32 style, character at peak of jump, happy/excited expression. Retro game aesthetic, clean pixels, solid color background. Keep the character's key features and colors.",
-    "Transform this character into a cute pixel art sprite, 32x32 style, character coming down from jump. Retro game aesthetic, clean pixels, solid color background. Keep the character's key features and colors.",
-    "Transform this character into a cute pixel art sprite, 32x32 style, character landing, slightly squished. Retro game aesthetic, clean pixels, solid color background. Keep the character's key features and colors.",
-]
-
+# Animation presets: (labels, prompt_suffix)
 ANIMATION_PRESETS = {
-    "idle": IDLE_FRAME_PROMPTS,
-    "wave": WAVE_FRAME_PROMPTS,
-    "bounce": BOUNCE_FRAME_PROMPTS,
+    "idle": {
+        "labels": ["Normal", "Breathe in", "Blink", "Breathe out"],
+        "prompt": (
+            "Fill each cell of this 4-panel sprite sheet grid with a cute pixel art version "
+            "of the character from the reference image. 32x32 pixel art style, retro game aesthetic, "
+            "clean chunky pixels. Each cell should show a DIFFERENT frame of a subtle idle animation: "
+            "Panel 1 (Normal): standing still. "
+            "Panel 2 (Breathe in): body raised slightly. "
+            "Panel 3 (Blink): eyes half-closed/blinking. "
+            "Panel 4 (Breathe out): body lowered slightly. "
+            "Keep the character's colors, features, and proportions IDENTICAL across all 4 panels. "
+            "Only the specified body part should change between frames. "
+            "Solid flat color background (same in all panels). Keep the grid lines visible."
+        ),
+    },
+    "wave": {
+        "labels": ["Stand", "Arm up", "Wave right", "Arm down"],
+        "prompt": (
+            "Fill each cell of this 4-panel sprite sheet grid with a cute pixel art version "
+            "of the character from the reference image. 32x32 pixel art style, retro game aesthetic, "
+            "clean chunky pixels. Each cell should show a DIFFERENT frame of a waving animation: "
+            "Panel 1 (Stand): standing with arms at sides. "
+            "Panel 2 (Arm up): one arm/paw raised up to wave. "
+            "Panel 3 (Wave right): arm waving to the right. "
+            "Panel 4 (Arm down): arm coming back down. "
+            "Keep the character's colors, features, and proportions IDENTICAL across all 4 panels. "
+            "Only the arm position should change between frames. "
+            "Solid flat color background (same in all panels). Keep the grid lines visible."
+        ),
+    },
+    "bounce": {
+        "labels": ["Stand", "Crouch", "Jump", "Fall"],
+        "prompt": (
+            "Fill each cell of this 4-panel sprite sheet grid with a cute pixel art version "
+            "of the character from the reference image. 32x32 pixel art style, retro game aesthetic, "
+            "clean chunky pixels. Each cell should show a DIFFERENT frame of a bouncing animation: "
+            "Panel 1 (Stand): standing normally. "
+            "Panel 2 (Crouch): squished down, preparing to jump. "
+            "Panel 3 (Jump): at peak of jump, stretched tall, feet off ground. "
+            "Panel 4 (Fall): coming back down. "
+            "Keep the character's colors, features, and proportions IDENTICAL across all 4 panels. "
+            "Only the vertical position and squish should change between frames. "
+            "Solid flat color background (same in all panels). Keep the grid lines visible."
+        ),
+    },
+    "dance": {
+        "labels": ["Pose 1", "Pose 2", "Pose 3", "Pose 4"],
+        "prompt": (
+            "Fill each cell of this 4-panel sprite sheet grid with a cute pixel art version "
+            "of the character from the reference image. 32x32 pixel art style, retro game aesthetic, "
+            "clean chunky pixels. Each cell should show a DIFFERENT frame of a fun dance animation: "
+            "Panel 1: leaning left with arms out. "
+            "Panel 2: centered with arms up. "
+            "Panel 3: leaning right with arms out. "
+            "Panel 4: centered with one arm on hip. "
+            "Keep the character's colors, features, and proportions IDENTICAL across all 4 panels. "
+            "Solid flat color background (same in all panels). Keep the grid lines visible."
+        ),
+    },
 }
 
 
-def generate_frame(
+def generate_sprite_sheet(
     input_image: Path,
+    template_path: Path,
     output_path: Path,
     prompt: str,
     resolution: str = "1K",
 ) -> bool:
-    """Generate a single sprite frame using nano-banana-pro."""
+    """Generate a sprite sheet using nano-banana-pro with template + reference image."""
     cmd = [
         "uv", "run", str(NANO_BANANA_SCRIPT),
         "--prompt", prompt,
         "--filename", str(output_path),
+        "-i", str(template_path),
         "-i", str(input_image),
         "--resolution", resolution,
     ]
-    
+
     try:
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=120,  # 2 minute timeout per frame
+            timeout=180,
         )
-        
+
         if result.returncode != 0:
-            print(f"  Error generating frame: {result.stderr}", file=sys.stderr)
+            print(f"  Error: {result.stderr.strip()}", file=sys.stderr, flush=True)
             return False
-            
+
         if not output_path.exists():
-            print(f"  Frame not created: {output_path}", file=sys.stderr)
+            print(f"  Sheet not created: {output_path}", file=sys.stderr, flush=True)
             return False
-            
+
         return True
-        
+
     except subprocess.TimeoutExpired:
-        print(f"  Timeout generating frame", file=sys.stderr)
+        print("  Timeout generating sprite sheet", file=sys.stderr, flush=True)
         return False
     except Exception as e:
-        print(f"  Exception generating frame: {e}", file=sys.stderr)
+        print(f"  Exception: {e}", file=sys.stderr, flush=True)
         return False
 
 
 def create_gif(
-    frame_paths: list[Path],
+    frames: list,
     output_path: Path,
     frame_duration: int = 200,
-    loop: int = 0,
-    resize: Optional[tuple[int, int]] = None,
+    size: int | None = None,
 ) -> bool:
-    """Assemble frames into an animated GIF."""
+    """Assemble PIL Image frames into an animated GIF."""
+    from PIL import Image
+
     try:
-        from PIL import Image
-        
-        frames = []
-        for fp in frame_paths:
-            img = Image.open(fp)
-            
-            # Resize if requested
-            if resize:
-                img = img.resize(resize, Image.Resampling.NEAREST)  # Nearest for pixel art
-            
-            # Convert to RGBA for consistency
-            if img.mode != 'RGBA':
-                img = img.convert('RGBA')
-            
-            frames.append(img)
-        
-        if not frames:
-            print("No frames to assemble", file=sys.stderr)
-            return False
-        
-        # Save as GIF
-        # Convert RGBA to P mode with transparency for GIF
-        gif_frames = []
+        processed = []
         for frame in frames:
-            # Create a copy with white background for GIF compatibility
-            bg = Image.new('RGBA', frame.size, (255, 255, 255, 255))
+            if size:
+                frame = frame.resize((size, size), Image.Resampling.NEAREST)
+            if frame.mode != "RGBA":
+                frame = frame.convert("RGBA")
+            bg = Image.new("RGBA", frame.size, (255, 255, 255, 255))
             composite = Image.alpha_composite(bg, frame)
-            gif_frames.append(composite.convert('P', palette=Image.Palette.ADAPTIVE))
-        
-        gif_frames[0].save(
+            processed.append(composite.convert("P", palette=Image.Palette.ADAPTIVE))
+
+        if not processed:
+            return False
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        processed[0].save(
             output_path,
             save_all=True,
-            append_images=gif_frames[1:],
+            append_images=processed[1:],
             duration=frame_duration,
-            loop=loop,
+            loop=0,
             optimize=True,
         )
-        
         return True
-        
     except Exception as e:
-        print(f"Error creating GIF: {e}", file=sys.stderr)
+        print(f"Error creating GIF: {e}", file=sys.stderr, flush=True)
         return False
 
 
@@ -153,152 +172,110 @@ def main():
         epilog="""
 Examples:
   sprite-animator -i photo.png -o sprite.gif
-  sprite-animator -i avatar.png -o wave.gif --animation wave
-  sprite-animator -i pet.jpg -o bounce.gif --animation bounce --frames 6
+  sprite-animator -i avatar.png -o wave.gif -a wave
+  sprite-animator -i pet.jpg -o bounce.gif -a bounce -s 256
         """,
     )
-    
-    parser.add_argument(
-        "-i", "--input",
-        required=True,
-        type=Path,
-        help="Input image (photo, drawing, etc.)",
-    )
-    
-    parser.add_argument(
-        "-o", "--output",
-        required=True,
-        type=Path,
-        help="Output GIF path",
-    )
-    
-    parser.add_argument(
-        "-a", "--animation",
-        choices=list(ANIMATION_PRESETS.keys()),
-        default="idle",
-        help="Animation type (default: idle)",
-    )
-    
-    parser.add_argument(
-        "-f", "--frames",
-        type=int,
-        default=4,
-        help="Number of frames to generate (default: 4)",
-    )
-    
-    parser.add_argument(
-        "-d", "--duration",
-        type=int,
-        default=200,
-        help="Frame duration in ms (default: 200)",
-    )
-    
-    parser.add_argument(
-        "-s", "--size",
-        type=int,
-        default=128,
-        help="Output sprite size in pixels (default: 128)",
-    )
-    
-    parser.add_argument(
-        "-r", "--resolution",
-        choices=["1K", "2K"],
-        default="1K",
-        help="Generation resolution (default: 1K)",
-    )
-    
-    parser.add_argument(
-        "--keep-frames",
-        action="store_true",
-        help="Keep individual frame files",
-    )
-    
-    parser.add_argument(
-        "-v", "--verbose",
-        action="store_true",
-        help="Verbose output",
-    )
-    
+
+    parser.add_argument("-i", "--input", required=True, type=Path, help="Input image")
+    parser.add_argument("-o", "--output", required=True, type=Path, help="Output GIF path")
+    parser.add_argument("-a", "--animation", choices=list(ANIMATION_PRESETS.keys()), default="idle", help="Animation type (default: idle)")
+    parser.add_argument("-d", "--duration", type=int, default=200, help="Frame duration in ms (default: 200)")
+    parser.add_argument("-s", "--size", type=int, default=128, help="Output sprite size in px (default: 128)")
+    parser.add_argument("-r", "--resolution", choices=["1K", "2K"], default="1K", help="Generation resolution")
+    parser.add_argument("--keep-sheet", action="store_true", help="Keep the raw sprite sheet")
+    parser.add_argument("--keep-frames", action="store_true", help="Keep individual frame files")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
+
     args = parser.parse_args()
-    
-    # Validate input
+
     if not args.input.exists():
-        print(f"Error: Input file not found: {args.input}", file=sys.stderr)
+        print(f"Error: Input not found: {args.input}", file=sys.stderr, flush=True)
         sys.exit(1)
-    
+
     if not NANO_BANANA_SCRIPT.exists():
-        print(f"Error: nano-banana-pro script not found: {NANO_BANANA_SCRIPT}", file=sys.stderr)
+        print(f"Error: nano-banana-pro not found: {NANO_BANANA_SCRIPT}", file=sys.stderr, flush=True)
         sys.exit(1)
-    
-    # Get prompts for animation type
-    prompts = ANIMATION_PRESETS[args.animation]
-    
-    # Adjust frame count
-    num_frames = min(args.frames, len(prompts))
-    if args.frames > len(prompts):
-        print(f"Note: {args.animation} animation has {len(prompts)} frames, using all of them")
-    
-    prompts = prompts[:num_frames]
-    
-    print(f"Generating {num_frames}-frame {args.animation} animation...")
-    print(f"Input: {args.input}")
-    print(f"Output: {args.output}")
-    
-    # Create temp directory for frames
+
+    preset = ANIMATION_PRESETS[args.animation]
+    cols = len(preset["labels"])
+
+    print(f"🎮 sprite-animator", flush=True)
+    print(f"   input: {args.input}", flush=True)
+    print(f"   animation: {args.animation} ({cols} frames)", flush=True)
+    print(f"   output: {args.output}", flush=True)
+
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
-        frame_paths = []
-        
-        for i, prompt in enumerate(prompts):
-            frame_path = tmpdir / f"frame_{i:02d}.png"
-            print(f"Generating frame {i+1}/{num_frames}...")
-            
-            if args.verbose:
-                print(f"  Prompt: {prompt[:80]}...")
-            
-            success = generate_frame(
-                args.input,
-                frame_path,
-                prompt,
-                args.resolution,
-            )
-            
-            if success:
-                frame_paths.append(frame_path)
-                print(f"  ✓ Frame {i+1} generated")
-            else:
-                print(f"  ✗ Frame {i+1} failed, skipping")
-        
-        if len(frame_paths) < 2:
-            print(f"Error: Only {len(frame_paths)} frames generated, need at least 2", file=sys.stderr)
-            sys.exit(1)
-        
-        print(f"\nAssembling {len(frame_paths)} frames into GIF...")
-        
-        # Create output directory if needed
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        
-        success = create_gif(
-            frame_paths,
-            args.output,
-            frame_duration=args.duration,
-            resize=(args.size, args.size),
+
+        # Step 1: Create template
+        print(f"\n📐 creating sprite sheet template...", flush=True)
+        template_img = create_template(cols=cols, rows=1, labels=preset["labels"])
+        template_path = tmpdir / "template.png"
+        template_img.save(template_path)
+        if args.verbose:
+            print(f"   template: {template_img.size}", flush=True)
+
+        # Step 2: Generate sprite sheet (single request!)
+        print(f"🎨 generating sprite sheet (single request)...", flush=True)
+        sheet_path = tmpdir / "sprite_sheet.png"
+
+        success = generate_sprite_sheet(
+            args.input,
+            template_path,
+            sheet_path,
+            preset["prompt"],
+            args.resolution,
         )
-        
-        if success:
-            print(f"✓ Animation saved: {args.output.resolve()}")
-            
-            # Copy frames if requested
-            if args.keep_frames:
-                frames_dir = args.output.parent / f"{args.output.stem}_frames"
-                frames_dir.mkdir(exist_ok=True)
-                from shutil import copy2
-                for fp in frame_paths:
-                    copy2(fp, frames_dir / fp.name)
-                print(f"  Frames saved to: {frames_dir}")
-        else:
-            print("Error: Failed to create GIF", file=sys.stderr)
+
+        if not success:
+            print("❌ failed to generate sprite sheet", file=sys.stderr, flush=True)
             sys.exit(1)
+
+        print(f"   ✓ sprite sheet generated", flush=True)
+
+        # Step 3: Extract frames
+        print(f"✂️  extracting {cols} frames...", flush=True)
+        from PIL import Image
+        sheet = Image.open(sheet_path)
+        if args.verbose:
+            print(f"   sheet size: {sheet.size}", flush=True)
+
+        # Auto-detect grid layout — model might return 2x2 instead of 4x1
+        w, h = sheet.size
+        if w == h and cols == 4:
+            # Square image = likely 2x2 grid
+            grid_cols, grid_rows = 2, 2
+            if args.verbose:
+                print(f"   detected 2x2 grid layout", flush=True)
+        else:
+            grid_cols, grid_rows = cols, 1
+        frames = extract_frames(sheet, cols=grid_cols, rows=grid_rows)
+        print(f"   ✓ extracted {len(frames)} frames", flush=True)
+
+        # Step 4: Assemble GIF
+        print(f"🔄 assembling animated GIF...", flush=True)
+        success = create_gif(frames, args.output, frame_duration=args.duration, size=args.size)
+
+        if not success:
+            print("❌ failed to create GIF", file=sys.stderr, flush=True)
+            sys.exit(1)
+
+        print(f"\n✨ done! saved: {args.output.resolve()}", flush=True)
+
+        # Optionally save sheet and frames
+        if args.keep_sheet:
+            sheet_out = args.output.parent / f"{args.output.stem}_sheet.png"
+            import shutil
+            shutil.copy2(sheet_path, sheet_out)
+            print(f"   sheet: {sheet_out}", flush=True)
+
+        if args.keep_frames:
+            frames_dir = args.output.parent / f"{args.output.stem}_frames"
+            frames_dir.mkdir(exist_ok=True)
+            for idx, frame in enumerate(frames):
+                frame.save(frames_dir / f"frame_{idx:02d}.png")
+            print(f"   frames: {frames_dir}/", flush=True)
 
 
 if __name__ == "__main__":
