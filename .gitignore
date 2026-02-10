@@ -1,3 +1,12 @@
 __pycache__/
 .venv/
 *.pyc
+*.egg-info/
+dist/
+build/
+
+# Generated outputs (don't commit test artifacts)
+*_frames/
+*_sheet.png
+*.gif
+!banner.png
