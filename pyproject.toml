@@ -3,10 +3,31 @@ name = "sprite-animator"
 version = "0.1.0"
 description = "Generate animated pixel art sprites from any image using AI"
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.10"
+authors = [
+    { name = "Aaron Levin", email = "awlevin@comcast.net" },
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Games/Entertainment",
+]
+keywords = ["sprite", "pixel-art", "animation", "gif", "ai", "game-dev"]
 dependencies = [
     "pillow>=10.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Olafs-World/sprite-animator"
+Repository = "https://github.com/Olafs-World/sprite-animator"
+Issues = "https://github.com/Olafs-World/sprite-animator/issues"
 
 [project.scripts]
 sprite-animator = "sprite_animator.cli:main"
@@ -14,3 +35,13 @@ sprite-animator = "sprite_animator.cli:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.1.0",
+]
