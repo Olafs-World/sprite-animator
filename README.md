@@ -78,6 +78,9 @@ sprite-animator -i drawing.png -o idle.gif -a idle
 
 ```bash
 npx skills add olafs-world/sprite-animator
+
+# or with OpenClaw
+clawhub install olafs-world/sprite-animator
 ```
 
 ### Quick run (no install)
