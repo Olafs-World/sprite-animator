@@ -1,6 +1,10 @@
 ---
 name: sprite-animator
 description: Generate animated pixel art sprite GIFs from any image using AI (Gemini). Use when the user wants to create pixel art animations, sprite sheets, animated character GIFs, or convert photos/drawings into retro game-style animated sprites. Supports idle, wave, bounce, and dance animations.
+license: MIT
+metadata:
+  author: Olafs-World
+  version: "0.2.1"
 ---
 
 # Sprite Animator
