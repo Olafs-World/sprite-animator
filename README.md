@@ -74,6 +74,12 @@ sprite-animator -i drawing.png -o idle.gif -a idle
 
 ## Installation
 
+### As an Agent Skill
+
+```bash
+npx skills add olafs-world/sprite-animator
+```
+
 ### Quick run (no install)
 
 ```bash
